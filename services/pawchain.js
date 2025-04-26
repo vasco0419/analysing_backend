@@ -405,12 +405,24 @@ const getTotalWalletNamesSold = async (from, to) => {
   return totalWalletList;
 };
 
+const getTxCount = async (from, to) => {
+  const result = await block.aggregate([
+    { $match: { createdAt: { $gt: from, $lt: to } } },
+    { $project: { count: { $size: "$txs" } } },
+    { $group: { _id: null, total: { $sum: "$count" } } }
+  ]);
+
+  return result[0]?.total || 0;
+};
+
 const getTotalValueLockedFromSummary = async () => {
   // Step 1: Get the latest TVL entry
   let latestTvl = await tvl.findOne({}).sort({ createdAt: -1 });
 
-  if (!latestTvl) return { latestTvl: 0, latestPaw: 0, latestPawPrice: 0, liquidityHeld: 0, latest24hTvl: 0, latest24hPaw: 0, latest24hPawPrice: 0, latest24hLiquidityHeld: 0, tvlList: Array(7).fill({tvlValue: 0, pawTokens: 0, pawPrice: 0, liquidityHeld: 0}) };
-   
+  if (!latestTvl) return { latestTvl: 0, latestPaw: 0, latestPawPrice: 0, liquidityHeld: 0, latest24hTvl: 0, latest24hPaw: 0, 
+                          latest24hPawPrice: 0, latest24hLiquidityHeld: 0, 
+                          tvlList: Array(7).fill({tvlValue: 0, pawTokens: 0, pawPrice: 0, liquidityHeld: 0}) };
+  
   // Step 2: Calculate 24h threshold
   let threshold_time = latestTvl.createdAt - 24 * 3600 * 1000;
   let latest24hTvl = await tvl.findOne({ createdAt: { $gt: threshold_time } }).sort({ createdAt: -1 });
@@ -424,23 +436,40 @@ const getTotalValueLockedFromSummary = async () => {
   let tvlList = await tvl.find({
     createdAt: { $gt: threshold_time },
     dayFlag: 1
-  }, {tvlValue: 1, pawTokens: 1, pawPrice: 1, liquidityHeld: 1, _id: 0}).sort({ createdAt: 1 }).limit(7);
+  }, {tvlValue: 1, pawTokens: 1, pawPrice: 1, liquidityHeld: 1, latestTxCount: 1, _id: 0}).sort({ createdAt: 1 }).limit(7);
   
   // Step 5: Pad the list to 7 entries with 0s at the front
   while (tvlList.length < 7) {
     tvlList.unshift({tvlValue: 0, pawTokens: 0, pawPrice: 0, liquidityHeld: 0});
   }
 
+  let latestBlock = await block.findOne({}, {createdAt:1}).sort({createdAt: -1});
+  let latestTx = await getTxCount(0, latestBlock.createdAt);
+  let latestTx24h = await getTxCount(latestBlock.createdAt - 24 * 3600 * 1000, latestBlock.createdAt);
+  
+  threshold_time = latestBlock.createdAt - hourOffset * 24 * 3600 * 1000;
+  
+  const txCountList = await Promise.all(
+    Array.from({ length: 7 }).map((_, index) => {
+      const from = threshold_time + index * 24 * 3600 * 1000;
+      const to = threshold_time + (index + 1) * 24 * 3600 * 1000;
+      return getTxCount(from, to).then(txCount => ({ txCount }));
+    })
+  );
+
   return {
     latestTvl: latestTvl.tvlValue,
     latestPaw: latestTvl.pawTokens,
     latestPawPrice: latestTvl.pawPrice,
     latestLiquidityHeld: latestTvl.liquidityHeld,
+    latestTx: latestTx,
     latest24hTvl: latestTvl.tvlValue - latest24hTvl.tvlValue || 0,
     latest24hPaw: latestTvl.pawTokens - latest24hTvl.pawTokens || 0,
     latest24hPawPrice: latestTvl.pawPrice - latest24hTvl.pawPrice || 0,
     latest24hLiquidityHeld: latestTvl.liquidityHeld - latest24hTvl.liquidityHeld || 0,
-    tvlList
+    latestTx24: latestTx24h,  
+    tvlList,
+    txCountList
   };
 };
 
@@ -467,7 +496,7 @@ const getTotalValueLockedFromBridge = async () => {
 
       const bridgeVolume = await getTotalBridgeEachVolume(from, to);
       return {
-        month: `${fromYear}-${String(fromMonth + 1).padStart(2, '0')}`,
+        month: `${fromYear}/${String(fromMonth + 1).padStart(2, '0')}`,
         bridgeVolume
       };
     })
@@ -483,7 +512,7 @@ const getTotalValueLockedFromBridge = async () => {
 
       const bridgeFee = await getBridgeFeesCollected(from, to);
       return {
-        month: `${fromYear}-${String(fromMonth + 1).padStart(2, '0')}`,
+        month: `${fromYear}/${String(fromMonth + 1).padStart(2, '0')}`,
         bridgeFee
       };
     })
@@ -616,10 +645,10 @@ const getPawSwap = async() => {
       const fromMonth = targetDate.getMonth();
       const from = new Date(fromYear, fromMonth, 1, 0, 0, 0).getTime();
       const to = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime(); // next month
-      const APY = await getNumberOfSwap(from, to);
+      const Count = await getNumberOfSwap(from, to);
       return {
         time: `${fromYear}/${String(fromMonth + 1).padStart(2, '0')}`,
-        APY
+        Count
       };
     })
   );
@@ -651,7 +680,7 @@ const getTotalValueLocked = async () => {
 
   // Calculate the total sum of priceA + priceB for all pools
   const totalPoolValue = latestTvl.liquidityPools.reduce((sum, pool) => sum + pool.priceA + pool.priceB, 0);
-    
+
   const pawValue = latestTvl.pawValue;
 
   return {
@@ -660,8 +689,6 @@ const getTotalValueLocked = async () => {
     totalPoolValue // Return the sum of all priceA + priceB values
   };
 };
-
-
 
 module.exports = {
   getLatestBlockTime,
@@ -681,7 +708,8 @@ module.exports = {
   getSwapFeesCollected,
   getBridgeFeesCollected,
   getUniqueWalletNamesSold,
-  getTotalWalletNamesSold, 
+  getTotalWalletNamesSold,
+  getTxCount, 
   getTotalValueLockedFromSummary, 
   getTotalValueLockedFromBridge,  
   getPawTotalSupply,     
