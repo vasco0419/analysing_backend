@@ -519,7 +519,6 @@ const getTokenInfo = async(req, res) => {
     const totalSupply = await service.getPawTotalSupply();
     const pawTokensEachChain = await service.getTotalValueLockedFromPawToken();
     const pawBurnt = await service.getPawBurntTokens();
-    console.log(pawBurnt);
     result = ({
       "status": 200,
       totalSupply,

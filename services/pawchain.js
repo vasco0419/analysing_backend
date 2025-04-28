@@ -4,7 +4,7 @@ const block = require('../models/block');
 const tvl = require('../models/tvl');
 const { chain } = require("lodash");
 const apis = require("../apis");
-const { BURN_WALLETS, PAW } = require("../config");
+const { BURN_WALLETS, PAW, WEEKDAYS } = require("../config");
 
 const getLatestBlockTime = async () => {
   const result = await block.findOne({},{createdAt: 1, _id: 0}).sort({ createdAt: -1 }); // Get latest document
@@ -87,7 +87,7 @@ const numberOfActiveUsers = async () => {
       const from = dynamicThresholdTime + index * 24 * 3600 * 1000;
       const to = dynamicThresholdTime + (index + 1) * 24 * 3600 * 1000;
       const count = await getNumberOfActiveUsers(from, to);
-      return typeof count === 'number' ? count : 0;
+      return typeof count === 'number' ? {time: WEEKDAYS[index], activeUsers: count} : {time: WEEKDAYS[index], activeUsers: 0};
     })
   );
 
@@ -312,7 +312,7 @@ const totalFeesGenerated = async(from, to) => {
       const from = dynamicThresholdTime + index * 24 * 3600 * 1000;
       const to = dynamicThresholdTime + (index + 1) * 24 * 3600 * 1000;
       const volume = await getTotalFeesGenerated(from, to);
-      return volume
+      return {time:WEEKDAYS[index], volume}
     })
   );
 
@@ -325,7 +325,7 @@ const totalFeesGenerated = async(from, to) => {
 
 const getSwapFeesCollected = async (from, to) => {
   const matchStage = from === 0
-    ? {} // No time filter
+    ? {swap_flag: 1} // No time filter
     : {
         createdAt: { $gt: from, $lt: to },
         swap_flag: 1
@@ -352,7 +352,7 @@ const getSwapFeesCollected = async (from, to) => {
 
 const getBridgeFeesCollected = async (from, to) => {
   const matchStage = from === 0
-    ? {}
+    ? {bridge_flag: { $eq: 1 }}
     : {
         createdAt: { $gt: from, $lt: to },
         bridge_flag: { $eq: 1 }
@@ -449,11 +449,15 @@ const getTotalValueLockedFromSummary = async () => {
   
   threshold_time = latestBlock.createdAt - hourOffset * 24 * 3600 * 1000;
   
+
   const txCountList = await Promise.all(
     Array.from({ length: 7 }).map((_, index) => {
       const from = threshold_time + index * 24 * 3600 * 1000;
       const to = threshold_time + (index + 1) * 24 * 3600 * 1000;
-      return getTxCount(from, to).then(txCount => ({ txCount }));
+      return getTxCount(from, to).then(txCount => ({
+        time: WEEKDAYS[index],
+        txCount
+      }));
     })
   );
 
@@ -546,6 +550,7 @@ const getTotalValueLockedFromPawToken = async () => {
   return {
     eachTvlData: latestTvl.eachTvlData,
     latestPaw: latestTvl.pawTokens,
+    pawPrice: latestTvl.pawPrice
   };
 };
 
@@ -576,7 +581,8 @@ const getPawWalletNamingService = async() => {
   const walletNamesRenewed = uniqueWalletNameSold.length;
   const totalFeeGenerated = await getTotalFeesGenerated(0, latestBlock.createdAt);
   const pawFeeCollected = totalFeeGenerated.pawFee;
-  
+  console.log("totalFeeCollected: " + pawFeeCollected);
+
   let threshold_time = latestBlock.createdAt - 24 * 3600 * 1000;
   let todayWalletSold = await getUniqueWalletNamesSold(threshold_time, latestBlock.createdAt);
 
@@ -622,6 +628,7 @@ const getPawSwap = async() => {
   const onChainSwapVolume = await getOnChainSwapVolume(0, latestBlock.createdAt);
   const totalSwapFee = await getSwapFeesCollected(0, latestBlock.createdAt);
   const swapFeeCollected = totalSwapFee.pawFee;
+  console.log("swapFeeCollected: " + swapFeeCollected);
 
   const now = new Date();
   const targetDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
@@ -629,11 +636,11 @@ const getPawSwap = async() => {
   const fromMonth = targetDate.getMonth();
   
   let from = new Date(fromYear, fromMonth, 1, 0, 0, 0).getTime();
-  let to = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime(); // next month
+  let to = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime(); // 3 month
   const pastSwapVolume = await getTotalSwapVolume(from, to);
 
   from = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime();
-  to = new Date(fromYear, fromMonth + 2, 1, 0, 0, 0).getTime(); // next month
+  to = new Date(fromYear, fromMonth + 2, 1, 0, 0, 0).getTime(); // 2 month
   const currentSwapVolume = await getTotalSwapVolume(from, to);
 
   const swapGrowthRate = ((currentSwapVolume - pastSwapVolume) * 100 / pastSwapVolume).toFixed(2);
@@ -680,11 +687,11 @@ const getTotalValueLocked = async () => {
 
   // Calculate the total sum of priceA + priceB for all pools
   const totalPoolValue = latestTvl.liquidityPools.reduce((sum, pool) => sum + pool.priceA + pool.priceB, 0);
-
-  const pawValue = latestTvl.pawValue;
+    
+  const tvlValue = latestTvl.tvlValue;
 
   return {
-    pawValue,
+    tvlValue,
     poolData,
     totalPoolValue // Return the sum of all priceA + priceB values
   };
