@@ -74,12 +74,13 @@ const numberOfActiveUsers = async () => {
 
   const latestUserCount = await getNumberOfActiveUsers(0, latestBlock.createdAt);
 
-  const threshold24h = latestBlock.createdAt - 24 * 3600 * 1000;
-  const latest24hUserCount = await getNumberOfActiveUsers(threshold24h, latestBlock.createdAt);
   const now = new Date();
+  const threshold24h = now.getTime() - 24 * 3600 * 1000;
+  const latest24hUserCount = await getNumberOfActiveUsers(threshold24h, latestBlock.createdAt);
+  
   const dayNumber = now.getDay();
   const hourOffset = 7 + dayNumber;
-  const dynamicThresholdTime = latestBlock.createdAt - hourOffset * 24 * 3600 * 1000;
+  const dynamicThresholdTime = now.getTime() - hourOffset * 24 * 3600 * 1000;
 
   // Use Promise.all to collect all counts in a separate array
   const activeUserCountList = await Promise.all(
@@ -296,16 +297,15 @@ const totalFeesGenerated = async(from, to) => {
   }
 
   const createdAtTime = new Date(latestBlock.createdAt).getTime();
-
   const latestFeesVolume = await getTotalFeesGenerated(0, createdAtTime);
 
-  const threshold24h = createdAtTime - 24 * 3600 * 1000;
+  const now = new Date();
+  const threshold24h = now.getTime() - 24 * 3600 * 1000;
   const latest24hFeesVolume = await getTotalFeesGenerated(threshold24h, createdAtTime);
 
-  const now = new Date();
   const dayNumber = now.getDay();
   const hourOffset = 7 + dayNumber;
-  const dynamicThresholdTime = createdAtTime - hourOffset * 24 * 3600 * 1000;
+  const dynamicThresholdTime = now.getTime() - hourOffset * 24 * 3600 * 1000;
 
   const feesVolumeList = await Promise.all(
     Array.from({ length: 7 }).map(async (_, index) => {
@@ -424,14 +424,15 @@ const getTotalValueLockedFromSummary = async () => {
                           tvlList: Array(7).fill({tvlValue: 0, pawTokens: 0, pawPrice: 0, liquidityHeld: 0}) };
   
   // Step 2: Calculate 24h threshold
-  let threshold_time = latestTvl.createdAt - 24 * 3600 * 1000;
-  let latest24hTvl = await tvl.findOne({ createdAt: { $gt: threshold_time } }).sort({ createdAt: -1 });
-  // Step 3: Calculate dynamic threshold by weekday
   const now = new Date();
+  let threshold_time = now.getTime() - 24 * 3600 * 1000;
+  let latest24hTvl = await tvl.findOne({ createdAt: { $gt: threshold_time } }).sort({ createdAt: -1 });
+
+  // Step 3: Calculate dynamic threshold by weekday
   const dayNumber = now.getDay();
   const hourOffset = 7 + dayNumber; // 0 (Sun) → 7, 6 (Sat) → 13
-  threshold_time = latestTvl.createdAt - hourOffset * 24 * 3600 * 1000;
-
+  threshold_time = now.getTime() - hourOffset * 24 * 3600 * 1000;
+  
   // Step 4: Get past 7 TVLs with dayFlag == 1
   let tvlList = await tvl.find({
     createdAt: { $gt: threshold_time },
@@ -446,8 +447,6 @@ const getTotalValueLockedFromSummary = async () => {
   let latestBlock = await block.findOne({}, {createdAt:1}).sort({createdAt: -1});
   let latestTx = await getTxCount(0, latestBlock.createdAt);
   let latestTx24h = await getTxCount(latestBlock.createdAt - 24 * 3600 * 1000, latestBlock.createdAt);
-  
-  threshold_time = latestBlock.createdAt - hourOffset * 24 * 3600 * 1000;
   
 
   const txCountList = await Promise.all(
@@ -481,15 +480,15 @@ const getTotalValueLockedFromBridge = async () => {
   let latestTvl = await tvl.findOne({}).sort({ createdAt: -1 });
   let latestBlock = await tvl.findOne({}).sort({ createdAt: -1 });
 
-  let threshold_time = latestBlock.createdAt - 24 * 3600 * 1000;
+  const now = new Date();
+  let threshold_time = now.getTime() - 24 * 3600 * 1000;
   
   const totalBridgeFees = await getBridgeFeesCollected(0, latestBlock.createdAt);
   const todayBridgeFees = await getBridgeFeesCollected(threshold_time, latestBlock.createdAt);
   const bridge24h = await getTotalBridgeEachVolume(threshold_time, latestBlock.createdAt);
-  threshold_time = latestBlock.createdAt - 7 * 24 * 3600 * 1000;
+  threshold_time = now.getTime() - 7 * 24 * 3600 * 1000;
   const bridge7d = await getTotalBridgeEachVolume(threshold_time, latestBlock.createdAt);
 
-  const now = new Date();
   const totalBridgeVolumeList = await Promise.all(
     Array.from({ length: 24 }).map(async (_, index) => {
       const targetDate = new Date(now.getFullYear(), now.getMonth() - index, 1);
@@ -583,13 +582,13 @@ const getPawWalletNamingService = async() => {
   const pawFeeCollected = totalFeeGenerated.pawFee;
   console.log("totalFeeCollected: " + pawFeeCollected);
 
-  let threshold_time = latestBlock.createdAt - 24 * 3600 * 1000;
+  const now = new Date();
+  let threshold_time = now.getTime() - 24 * 3600 * 1000;
   let todayWalletSold = await getUniqueWalletNamesSold(threshold_time, latestBlock.createdAt);
 
-  const now = new Date();
   const dayNumber = now.getDay();
   const hourOffset = 7 + dayNumber; // 0 (Sun) → 7, 6 (Sat) → 13
-  threshold_time = latestBlock.createdAt - hourOffset * 24 * 3600 * 1000;
+  threshold_time = now.getTime() - hourOffset * 24 * 3600 * 1000;
 
   let pawFeeList = [];
   for(let i = 0; i < 7; i++){
@@ -628,7 +627,6 @@ const getPawSwap = async() => {
   const onChainSwapVolume = await getOnChainSwapVolume(0, latestBlock.createdAt);
   const totalSwapFee = await getSwapFeesCollected(0, latestBlock.createdAt);
   const swapFeeCollected = totalSwapFee.pawFee;
-  console.log("swapFeeCollected: " + swapFeeCollected);
 
   const now = new Date();
   const targetDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
@@ -637,12 +635,12 @@ const getPawSwap = async() => {
   
   let from = new Date(fromYear, fromMonth, 1, 0, 0, 0).getTime();
   let to = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime(); // 3 month
-  const pastSwapVolume = await getTotalSwapVolume(from, to);
+  let pastSwapVolume = await getTotalSwapVolume(from, to);
 
   from = new Date(fromYear, fromMonth + 1, 1, 0, 0, 0).getTime();
   to = new Date(fromYear, fromMonth + 2, 1, 0, 0, 0).getTime(); // 2 month
   const currentSwapVolume = await getTotalSwapVolume(from, to);
-
+  if(pastSwapVolume === 0) pawSwapVolume = currentSwapVolume;
   const swapGrowthRate = ((currentSwapVolume - pastSwapVolume) * 100 / pastSwapVolume).toFixed(2);
   
   const swapCountList = await Promise.all(
@@ -689,11 +687,22 @@ const getTotalValueLocked = async () => {
   const totalPoolValue = latestTvl.liquidityPools.reduce((sum, pool) => sum + pool.priceA + pool.priceB, 0);
     
   const tvlValue = latestTvl.tvlValue;
+  
+  const now = new Date();
+  const tvlList = await tvl.find(
+    { createdAt: { $lt: now }, dayFlag: 1 },
+    { createdAt:1, tvlValue: 1, _id: 0 }
+  )
+  .sort({ createdAt: 1})
+  .limit(16)
+  .exec(); // (optional) ensures execution if using Mongoose
 
+  
   return {
     tvlValue,
     poolData,
-    totalPoolValue // Return the sum of all priceA + priceB values
+    totalPoolValue, // Return the sum of all priceA + priceB values
+    tvlList
   };
 };
 
